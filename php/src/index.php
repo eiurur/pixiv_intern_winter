@@ -85,7 +85,7 @@ function attempt_login($login, $password) {
     login_log(false, $login, $user['id']);
     return ['error' => 'locked'];
   }
-  if (!empty($user) && calculate_password_hash($password, $user['salt']) == $user['password_hash']) {
+  if (!empty($user) && calculate_password_hash($password, $user['salt']) === $user['password_hash']) {
     login_log(true, $login, $user['id']);
     return ['user' => $user];
   }

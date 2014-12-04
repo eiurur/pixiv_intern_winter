@@ -51,26 +51,66 @@ function login_log($succeeded, $login, $user_id=null) {
   $stmt->bindValue(':succeeded', $succeeded ? 1 : 0, PDO::PARAM_INT);
   $stmt->execute();
 }
+
+function lock_log($user_id) {
+  $db = option('db_conn');
+  $stmt = $db->prepare('INSERT INTO user_locks (`user_id`, `num`) VALUES (:user_id, 1) ON DUPLICATE KEY UPDATE num = num + 1');
+  $stmt->bindValue(':user_id', $user_id, PDO::PARAM_INT);
+  $stmt->execute();
+}
+
+function ban_log() {
+  $db = option('db_conn');
+  $stmt = $db->prepare('INSERT INTO ip_bans (`ip`, `num`) VALUES (:ip, 1) ON DUPLICATE KEY UPDATE num = num + 1');
+  $stmt->bindValue(':ip', $_SERVER['REMOTE_ADDR'], PDO::PARAM_STR);
+  $stmt->execute();
+}
+
+function clear_failures($user_id) {
+  $db = option('db_conn');
+  $stmt = $db->prepare('UPDATE ip_bans SET num = 0 WHERE ip = :ip');
+  $stmt->bindValue(':ip', $_SERVER['REMOTE_ADDR'], PDO::PARAM_STR);
+  $stmt->execute();
+
+  $stmt = $db->prepare('UPDATE user_locks SET num = 0 WHERE user_id = :user_id');
+  $stmt->bindValue(':user_id', $user_id, PDO::PARAM_INT);
+  $stmt->execute();
+}
+
 function user_locked($user) {
   if (empty($user)) { return null; }
+
   $db = option('db_conn');
-  $stmt = $db->prepare('SELECT COUNT(1) AS failures FROM login_log WHERE user_id = :user_id AND id > IFNULL((select id from login_log where user_id = :user_id AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0)');
+
+  $stmt = $db->prepare('SELECT num AS failures FROM user_locks WHERE user_id = :user_id');
   $stmt->bindValue(':user_id', $user['id'], PDO::PARAM_INT);
   $stmt->execute();
   $log = $stmt->fetch(PDO::FETCH_ASSOC);
+
+  if ($log['failures'] === null) {
+    return false;
+  }
+
   $config = option('config');
   return $config['user_lock_threshold'] <= $log['failures'];
 }
-# FIXME
+
 function ip_banned() {
   $db = option('db_conn');
-  $stmt = $db->prepare('SELECT COUNT(1) AS failures FROM login_log WHERE ip = :ip AND id > IFNULL((select id from login_log where ip = :ip AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0)');
+
+  $stmt = $db->prepare('SELECT num AS failures FROM ip_bans WHERE ip = :ip');
   $stmt->bindValue(':ip', $_SERVER['REMOTE_ADDR'], PDO::PARAM_STR);
   $stmt->execute();
   $log = $stmt->fetch(PDO::FETCH_ASSOC);
+
+  if ($log['failures'] === null) {
+    return false;
+  }
+
   $config = option('config');
   return $config['ip_ban_threshold'] <= $log['failures'];
 }
+
 function attempt_login($login, $password) {
   $db = option('db_conn');
   $stmt = $db->prepare('SELECT * FROM users WHERE login = :login');
@@ -79,22 +119,30 @@ function attempt_login($login, $password) {
   $user = $stmt->fetch(PDO::FETCH_ASSOC);
   if (ip_banned()) {
     login_log(false, $login, isset($user['id']) ? $user['id'] : null);
+    if (!empty($user)) {
+      lock_log($user['id']);
+    }
     return ['error' => 'banned'];
   }
   if (user_locked($user)) {
     login_log(false, $login, $user['id']);
+    ban_log();
     return ['error' => 'locked'];
   }
   if (!empty($user) && calculate_password_hash($password, $user['salt']) === $user['password_hash']) {
     login_log(true, $login, $user['id']);
+    clear_failures($user['id']);
     return ['user' => $user];
   }
   elseif (!empty($user)) {
     login_log(false, $login, $user['id']);
+    lock_log($user['id']);
+    ban_log();
     return ['error' => 'wrong_password'];
   }
   else {
     login_log(false, $login);
+    ban_log();
     return ['error' => 'wrong_login'];
   }
 }

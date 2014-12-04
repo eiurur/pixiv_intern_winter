@@ -66,6 +66,14 @@ function ban_log() {
   $stmt->execute();
 }
 
+function login_time_log($user_id) {
+  $db = option('db_conn');
+  $stmt = $db->prepare('INSERT INTO login_time_log (`created_at`, `user_id`, `ip`) VALUES (now(), :user_id, :ip)');
+  $stmt->bindValue(':user_id', $user_id, PDO::PARAM_INT);
+  $stmt->bindValue(':ip', $_SERVER['REMOTE_ADDR'], PDO::PARAM_STR);
+  $stmt->execute();
+}
+
 function clear_failures($user_id) {
   $db = option('db_conn');
   $stmt = $db->prepare('UPDATE ip_bans SET num = 0 WHERE ip = :ip');
@@ -131,6 +139,7 @@ function attempt_login($login, $password) {
   }
   if (!empty($user) && calculate_password_hash($password, $user['salt']) === $user['password_hash']) {
     login_log(true, $login, $user['id']);
+    login_time_log($user['id']);
     clear_failures($user['id']);
     return ['user' => $user];
   }
@@ -162,12 +171,11 @@ function current_user() {
   return $user;
 }
 function last_login($user) {
-  // $user = current_user();
   if (empty($user)) {
     return null;
   }
   $db = option('db_conn');
-  $stmt = $db->prepare('SELECT * FROM login_log WHERE succeeded = 1 AND user_id = :id ORDER BY id DESC LIMIT 2');
+  $stmt = $db->prepare('SELECT ip, created_at FROM login_time_log WHERE user_id = :id ORDER BY id DESC LIMIT 2');
   $stmt->bindValue(':id', $user['id'], PDO::PARAM_INT);
   $stmt->execute();
   $stmt->fetch();

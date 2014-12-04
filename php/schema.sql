@@ -23,3 +23,10 @@ CREATE TABLE IF NOT EXISTS `user_locks` (
   `user_id` int NOT NULL PRIMARY KEY,
   `num` int DEFAULT 0
 ) DEFAULT CHARSET=utf8;
+
+CREATE TABLE IF NOT EXISTS `login_time_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `created_at` datetime NOT NULL,
+  `user_id` int,
+  `ip` varchar(255) NOT NULL,
+) DEFAULT CHARSET=utf8;

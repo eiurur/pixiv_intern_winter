@@ -113,8 +113,8 @@ function current_user() {
   }
   return $user;
 }
-function last_login() {
-  $user = current_user();
+function last_login($user) {
+  // $user = current_user();
   if (empty($user)) {
     return null;
   }
@@ -206,7 +206,7 @@ dispatch_get('/mypage', function() {
   }
   else {
     set('user', $user);
-    set('last_login', last_login());
+    set('last_login', last_login($user));
     return html('mypage.html.php');
   }
 });
